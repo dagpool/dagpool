@@ -38,23 +38,39 @@
 
 #include "config/bpool-version.h"
 #include "Utils.h"
-#include "qitmeer/GbtMaker.h"
+#include "StratumServer.h"
+#include "qitmeer/StratumServerBitcoin.h"
+
+#include <chainparams.h>
 
 using namespace std;
 using namespace libconfig;
 
-GbtMaker *gGbtMaker = nullptr;
+StratumServer *gStratumServer = nullptr;
 
 void handler(int sig) {
-  if (gGbtMaker) {
-    gGbtMaker->stop();
+  if (gStratumServer) {
+    if (sig == SIGTERM) {
+      gStratumServer->stopGracefully();
+    } else {
+      gStratumServer->stop();
+    }
   }
 }
 
 void usage() {
-  fprintf(stderr, BIN_VERSION_STRING("gbtmaker"));
-  fprintf(
-      stderr, "Usage:\tgbtmaker -c \"gbtmaker.cfg\" [-l <log_dir|stderr>]\n");
+  fprintf(stderr, BIN_VERSION_STRING("sserver"));
+  fprintf(stderr, "Usage:\tsserver -c \"sserver.cfg\" [-l <log_dir|stderr>]\n");
+}
+
+StratumServer *createStratumServer(const libconfig::Config &config) {
+  string type = config.lookup("sserver.type");
+  LOG(INFO) << "createServer type: " << type;
+
+  return new ServerBitcoin();
+
+  LOG(FATAL) << "Unknown type: " << type;
+  return nullptr;
 }
 
 int main(int argc, char **argv) {
@@ -95,7 +111,7 @@ int main(int argc, char **argv) {
   FLAGS_logbuflevel = -1; // don't buffer logs
   FLAGS_stop_logging_if_full_disk = true;
 
-  LOG(INFO) << BIN_VERSION_STRING("gbtmaker");
+  LOG(INFO) << BIN_VERSION_STRING("sserver");
 
   // Read the file. If there is an error, report it and exit.
   libconfig::Config cfg;
@@ -113,45 +129,38 @@ int main(int argc, char **argv) {
   // lock cfg file:
   //    you can't run more than one process with the same config file
   /*boost::interprocess::file_lock pidFileLock(optConf);
-  if (pidFileLock.try_lock() == false) {
+  if (pidFileLock.try_lock() == false)
+  {
     LOG(FATAL) << "lock cfg file fail";
-    return(EXIT_FAILURE);
+    return (EXIT_FAILURE);
   }*/
 
   signal(SIGTERM, handler);
   signal(SIGINT, handler);
+  // ignore SIGPIPE, avoiding process be killed
+  signal(SIGPIPE, SIG_IGN);
 
   try {
-    bool isCheckZmq = true;
-    cfg.lookupValue("gbtmaker.is_check_zmq", isCheckZmq);
-    int32_t rpcCallInterval = 5;
-    cfg.lookupValue("gbtmaker.rpcinterval", rpcCallInterval);
-    gGbtMaker = new GbtMaker(
-        cfg.lookup("bitcoind.zmq_addr"),
-        cfg.lookup("bitcoind.zmq_timeout"),
-        cfg.lookup("bitcoind.rpc_addr"),
-        cfg.lookup("bitcoind.rpc_userpwd"),
-        cfg.lookup("kafka.brokers"),
-        cfg.lookup("gbtmaker.rawgbt_topic"),
-        rpcCallInterval,
-        isCheckZmq);
-
-    if (!gGbtMaker->init()) {
-      LOG(FATAL) << "gbtmaker init failure";
+    // check if we are using testnet3
+    bool isTestnet3 = false;
+    cfg.lookupValue("testnet", isTestnet3);
+    if (isTestnet3) {
+      SelectParams(CBaseChainParams::TESTNET);
+      LOG(WARNING) << "using bitcoin testnet3";
     } else {
-#if defined(CHAIN_TYPE_BCH) || defined(CHAIN_TYPE_BSV)
-      bool runLightGbt = false;
-      cfg.lookupValue("gbtmaker.lightgbt", runLightGbt);
-      if (runLightGbt) {
-        gGbtMaker->runLightGbt();
-      } else {
-        gGbtMaker->run();
-      }
-#else
-      gGbtMaker->run();
-#endif
+      SelectParams(CBaseChainParams::MAIN);
     }
-    delete gGbtMaker;
+
+    gStratumServer = createStratumServer(cfg);
+
+    if (!gStratumServer->setup(cfg)) {
+      LOG(FATAL) << "stratum server setup failure";
+      return 1;
+    }
+
+    gStratumServer->run();
+
+    delete gStratumServer;
   } catch (const SettingException &e) {
     LOG(FATAL) << "config missing: " << e.getPath();
     return 1;

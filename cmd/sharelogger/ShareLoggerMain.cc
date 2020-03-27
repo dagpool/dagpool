@@ -36,25 +36,60 @@
 
 #include "zmq.hpp"
 
+#include "zlibstream/zstr.hpp"
+
 #include "config/bpool-version.h"
 #include "Utils.h"
-#include "qitmeer/GbtMaker.h"
+#include "qitmeer/ShareLoggerBitcoin.h"
 
 using namespace std;
 using namespace libconfig;
 
-GbtMaker *gGbtMaker = nullptr;
-
+// ShareLogWriter *gShareLogWriter = nullptr;
+vector<shared_ptr<ShareLogWriter>> writers;
 void handler(int sig) {
-  if (gGbtMaker) {
-    gGbtMaker->stop();
+  for (auto writer : writers) {
+    if (writer)
+      writer->stop();
   }
 }
 
 void usage() {
-  fprintf(stderr, BIN_VERSION_STRING("gbtmaker"));
+  fprintf(stderr, BIN_VERSION_STRING("sharelogger"));
   fprintf(
-      stderr, "Usage:\tgbtmaker -c \"gbtmaker.cfg\" [-l <log_dir|stderr>]\n");
+      stderr,
+      "Usage:\tsharelogger -c \"sharelogger.cfg\" [-l <log_dir|stderr>]\n");
+}
+
+void workerThread(shared_ptr<ShareLogWriter> w) {
+  if (w != nullptr)
+    w->run();
+}
+
+std::shared_ptr<ShareLogWriter>
+newShareLogWriter(const string &kafkaBrokers, const Setting &def) {
+  string chainType = def.lookup("chain_type");
+
+  int compressionLevel = Z_DEFAULT_COMPRESSION;
+  def.lookupValue("compression_level", compressionLevel);
+
+#if defined(CHAIN_TYPE_STR)
+  if (CHAIN_TYPE_STR == chainType)
+#else
+  if (false)
+#endif
+  {
+    return make_shared<ShareLogWriterBitcoin>(
+        def.lookup("chain_type").c_str(),
+        kafkaBrokers.c_str(),
+        def.lookup("data_dir").c_str(),
+        def.lookup("kafka_group_id").c_str(),
+        def.lookup("share_topic"),
+        compressionLevel);
+  } else {
+    LOG(FATAL) << "Unknown chain type " << chainType;
+    return nullptr;
+  }
 }
 
 int main(int argc, char **argv) {
@@ -95,7 +130,7 @@ int main(int argc, char **argv) {
   FLAGS_logbuflevel = -1; // don't buffer logs
   FLAGS_stop_logging_if_full_disk = true;
 
-  LOG(INFO) << BIN_VERSION_STRING("gbtmaker");
+  LOG(INFO) << BIN_VERSION_STRING("sharelogger");
 
   // Read the file. If there is an error, report it and exit.
   libconfig::Config cfg;
@@ -113,45 +148,43 @@ int main(int argc, char **argv) {
   // lock cfg file:
   //    you can't run more than one process with the same config file
   /*boost::interprocess::file_lock pidFileLock(optConf);
-  if (pidFileLock.try_lock() == false) {
+  if (pidFileLock.try_lock() == false)
+  {
     LOG(FATAL) << "lock cfg file fail";
-    return(EXIT_FAILURE);
+    return (EXIT_FAILURE);
   }*/
 
   signal(SIGTERM, handler);
   signal(SIGINT, handler);
 
   try {
-    bool isCheckZmq = true;
-    cfg.lookupValue("gbtmaker.is_check_zmq", isCheckZmq);
-    int32_t rpcCallInterval = 5;
-    cfg.lookupValue("gbtmaker.rpcinterval", rpcCallInterval);
-    gGbtMaker = new GbtMaker(
-        cfg.lookup("bitcoind.zmq_addr"),
-        cfg.lookup("bitcoind.zmq_timeout"),
-        cfg.lookup("bitcoind.rpc_addr"),
-        cfg.lookup("bitcoind.rpc_userpwd"),
-        cfg.lookup("kafka.brokers"),
-        cfg.lookup("gbtmaker.rawgbt_topic"),
-        rpcCallInterval,
-        isCheckZmq);
+    string brokers = cfg.lookup("kafka.brokers");
+    const Setting &root = cfg.getRoot();
+    const Setting &defs = root["sharelog_writers"];
 
-    if (!gGbtMaker->init()) {
-      LOG(FATAL) << "gbtmaker init failure";
-    } else {
-#if defined(CHAIN_TYPE_BCH) || defined(CHAIN_TYPE_BSV)
-      bool runLightGbt = false;
-      cfg.lookupValue("gbtmaker.lightgbt", runLightGbt);
-      if (runLightGbt) {
-        gGbtMaker->runLightGbt();
-      } else {
-        gGbtMaker->run();
+    for (int i = 0; i < defs.getLength(); ++i) {
+      const Setting &def = defs[i];
+      bool enabled = false;
+      def.lookupValue("enabled", enabled);
+
+      if (!enabled) {
+        continue;
       }
-#else
-      gGbtMaker->run();
-#endif
+
+      writers.push_back(newShareLogWriter(brokers, def));
+      vector<shared_ptr<thread>> workers;
+      for (auto writer : writers)
+        workers.push_back(std::make_shared<thread>(workerThread, writer));
+
+      // run
+      for (auto pWorker : workers) {
+        if (pWorker->joinable()) {
+          LOG(INFO) << "wait for worker " << pWorker->get_id();
+          pWorker->join();
+          LOG(INFO) << "worker exit";
+        }
+      }
     }
-    delete gGbtMaker;
   } catch (const SettingException &e) {
     LOG(FATAL) << "config missing: " << e.getPath();
     return 1;

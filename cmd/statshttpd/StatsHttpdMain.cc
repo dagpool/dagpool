@@ -38,23 +38,48 @@
 
 #include "config/bpool-version.h"
 #include "Utils.h"
-#include "qitmeer/GbtMaker.h"
+#include "StatsHttpd.h"
+#include "RedisConnection.h"
+
+#include "qitmeer/StatisticsBitcoin.h"
+#include "qitmeer/StatsHttpdBitcoin.h"
 
 using namespace std;
 using namespace libconfig;
 
-GbtMaker *gGbtMaker = nullptr;
+std::shared_ptr<StatsServer> gStatsServer = nullptr;
 
 void handler(int sig) {
-  if (gGbtMaker) {
-    gGbtMaker->stop();
+  if (gStatsServer) {
+    gStatsServer->stop();
   }
 }
 
 void usage() {
-  fprintf(stderr, BIN_VERSION_STRING("gbtmaker"));
+  fprintf(stderr, BIN_VERSION_STRING("statshttpd"));
   fprintf(
-      stderr, "Usage:\tgbtmaker -c \"gbtmaker.cfg\" [-l <log_dir|stderr>]\n");
+      stderr,
+      "Usage:\tstatshttpd -c \"statshttpd.cfg\" [-l <log_dir|stderr>]\n");
+}
+
+std::shared_ptr<StatsServer> newStatsServer(const libconfig::Config &cfg) {
+  int32_t dupShareTrackingHeight = 3;
+
+  string chainType = cfg.lookup("statshttpd.chain_type");
+  cfg.lookupValue(
+      "dup_share_checker.tracking_height_number", dupShareTrackingHeight);
+
+#if defined(CHAIN_TYPE_STR)
+  if (CHAIN_TYPE_STR == chainType)
+#else
+  if (false)
+#endif
+  {
+    return std::make_shared<StatsServerBitcoin>(cfg, nullptr);
+  }  else {
+    LOG(FATAL) << "newStatsServer: unknown chain type " << chainType;
+    return nullptr;
+  }
 }
 
 int main(int argc, char **argv) {
@@ -95,7 +120,7 @@ int main(int argc, char **argv) {
   FLAGS_logbuflevel = -1; // don't buffer logs
   FLAGS_stop_logging_if_full_disk = true;
 
-  LOG(INFO) << BIN_VERSION_STRING("gbtmaker");
+  LOG(INFO) << BIN_VERSION_STRING("statshttpd");
 
   // Read the file. If there is an error, report it and exit.
   libconfig::Config cfg;
@@ -122,36 +147,10 @@ int main(int argc, char **argv) {
   signal(SIGINT, handler);
 
   try {
-    bool isCheckZmq = true;
-    cfg.lookupValue("gbtmaker.is_check_zmq", isCheckZmq);
-    int32_t rpcCallInterval = 5;
-    cfg.lookupValue("gbtmaker.rpcinterval", rpcCallInterval);
-    gGbtMaker = new GbtMaker(
-        cfg.lookup("bitcoind.zmq_addr"),
-        cfg.lookup("bitcoind.zmq_timeout"),
-        cfg.lookup("bitcoind.rpc_addr"),
-        cfg.lookup("bitcoind.rpc_userpwd"),
-        cfg.lookup("kafka.brokers"),
-        cfg.lookup("gbtmaker.rawgbt_topic"),
-        rpcCallInterval,
-        isCheckZmq);
-
-    if (!gGbtMaker->init()) {
-      LOG(FATAL) << "gbtmaker init failure";
-    } else {
-#if defined(CHAIN_TYPE_BCH) || defined(CHAIN_TYPE_BSV)
-      bool runLightGbt = false;
-      cfg.lookupValue("gbtmaker.lightgbt", runLightGbt);
-      if (runLightGbt) {
-        gGbtMaker->runLightGbt();
-      } else {
-        gGbtMaker->run();
-      }
-#else
-      gGbtMaker->run();
-#endif
+    gStatsServer = newStatsServer(cfg);
+    if (gStatsServer->init()) {
+      gStatsServer->run();
     }
-    delete gGbtMaker;
   } catch (const SettingException &e) {
     LOG(FATAL) << "config missing: " << e.getPath();
     return 1;

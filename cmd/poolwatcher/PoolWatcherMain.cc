@@ -20,7 +20,7 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE.
-*/
+ */
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
@@ -33,28 +33,54 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <glog/logging.h>
 #include <libconfig.h++>
-
-#include "zmq.hpp"
+#include <event2/thread.h>
 
 #include "config/bpool-version.h"
 #include "Utils.h"
-#include "qitmeer/GbtMaker.h"
+#include "qitmeer/WatcherBitcoin.h"
+#include "qitmeer/WatcherBitcoinProxy.h"
+
+#include <chainparams.h>
 
 using namespace std;
 using namespace libconfig;
 
-GbtMaker *gGbtMaker = nullptr;
+// container for pool watch clients
+ClientContainer *gClientContainer = nullptr;
 
 void handler(int sig) {
-  if (gGbtMaker) {
-    gGbtMaker->stop();
+  if (gClientContainer) {
+    gClientContainer->stop();
   }
 }
 
 void usage() {
-  fprintf(stderr, BIN_VERSION_STRING("gbtmaker"));
+  fprintf(stderr, BIN_VERSION_STRING("poolwatcher"));
   fprintf(
-      stderr, "Usage:\tgbtmaker -c \"gbtmaker.cfg\" [-l <log_dir|stderr>]\n");
+      stderr,
+      "Usage:\tpoolwatcher -c \"poolwatcher.cfg\" [-l <log_dir|stderr>]\n");
+}
+
+ClientContainer *createClientContainer(const libconfig::Config &cfg) {
+  string type = cfg.lookup("poolwatcher.type");
+  LOG(INFO) << "PoolWatcher Type: " << type;
+
+#if defined(CHAIN_TYPE_STR)
+  if (CHAIN_TYPE_STR == type)
+#else
+  if (false)
+#endif
+  {
+    bool stratumProxy = false;
+    cfg.lookupValue("poolwatcher.stratum_proxy", stratumProxy);
+    if (stratumProxy)
+      return new ClientContainerBitcoinProxy(cfg);
+    else
+      return new ClientContainerBitcoin(cfg);
+  }
+
+  LOG(FATAL) << "Unknown PoolWatcher Type: " << type;
+  return nullptr;
 }
 
 int main(int argc, char **argv) {
@@ -95,7 +121,7 @@ int main(int argc, char **argv) {
   FLAGS_logbuflevel = -1; // don't buffer logs
   FLAGS_stop_logging_if_full_disk = true;
 
-  LOG(INFO) << BIN_VERSION_STRING("gbtmaker");
+  LOG(INFO) << BIN_VERSION_STRING("poolwatcher");
 
   // Read the file. If there is an error, report it and exit.
   libconfig::Config cfg;
@@ -120,38 +146,37 @@ int main(int argc, char **argv) {
 
   signal(SIGTERM, handler);
   signal(SIGINT, handler);
+  // ignore SIGPIPE, avoiding process be killed
+  signal(SIGPIPE, SIG_IGN);
+
+  // check if we are using testnet3
+  bool isTestnet3 = false;
+  cfg.lookupValue("testnet", isTestnet3);
+  if (isTestnet3) {
+    SelectParams(CBaseChainParams::TESTNET);
+    LOG(WARNING) << "using bitcoin testnet3";
+  } else {
+    SelectParams(CBaseChainParams::MAIN);
+  }
 
   try {
-    bool isCheckZmq = true;
-    cfg.lookupValue("gbtmaker.is_check_zmq", isCheckZmq);
-    int32_t rpcCallInterval = 5;
-    cfg.lookupValue("gbtmaker.rpcinterval", rpcCallInterval);
-    gGbtMaker = new GbtMaker(
-        cfg.lookup("bitcoind.zmq_addr"),
-        cfg.lookup("bitcoind.zmq_timeout"),
-        cfg.lookup("bitcoind.rpc_addr"),
-        cfg.lookup("bitcoind.rpc_userpwd"),
-        cfg.lookup("kafka.brokers"),
-        cfg.lookup("gbtmaker.rawgbt_topic"),
-        rpcCallInterval,
-        isCheckZmq);
+    gClientContainer = createClientContainer(cfg);
 
-    if (!gGbtMaker->init()) {
-      LOG(FATAL) << "gbtmaker init failure";
-    } else {
-#if defined(CHAIN_TYPE_BCH) || defined(CHAIN_TYPE_BSV)
-      bool runLightGbt = false;
-      cfg.lookupValue("gbtmaker.lightgbt", runLightGbt);
-      if (runLightGbt) {
-        gGbtMaker->runLightGbt();
-      } else {
-        gGbtMaker->run();
-      }
-#else
-      gGbtMaker->run();
-#endif
+    // add pools
+    const Setting &root = cfg.getRoot();
+    const Setting &pools = root["pools"];
+
+    for (int i = 0; i < pools.getLength(); i++) {
+      gClientContainer->addPools(pools[i]);
     }
-    delete gGbtMaker;
+
+    if (gClientContainer->init() == false) {
+      LOG(ERROR) << "init failure";
+    } else {
+      gClientContainer->run();
+    }
+
+    delete gClientContainer;
   } catch (const SettingException &e) {
     LOG(FATAL) << "config missing: " << e.getPath();
     return 1;

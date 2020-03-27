@@ -33,28 +33,20 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <glog/logging.h>
 #include <libconfig.h++>
+#include <event2/thread.h>
 
 #include "zmq.hpp"
 
 #include "config/bpool-version.h"
 #include "Utils.h"
-#include "qitmeer/GbtMaker.h"
-
+#include "StratumClient.h"
 using namespace std;
 using namespace libconfig;
 
-GbtMaker *gGbtMaker = nullptr;
-
-void handler(int sig) {
-  if (gGbtMaker) {
-    gGbtMaker->stop();
-  }
-}
-
 void usage() {
-  fprintf(stderr, BIN_VERSION_STRING("gbtmaker"));
+  fprintf(stderr, BIN_VERSION_STRING("simulator"));
   fprintf(
-      stderr, "Usage:\tgbtmaker -c \"gbtmaker.cfg\" [-l <log_dir|stderr>]\n");
+      stderr, "Usage:\tsimulator -c \"simulator.cfg\" [-l <log_dir|stderr>]\n");
 }
 
 int main(int argc, char **argv) {
@@ -95,7 +87,7 @@ int main(int argc, char **argv) {
   FLAGS_logbuflevel = -1; // don't buffer logs
   FLAGS_stop_logging_if_full_disk = true;
 
-  LOG(INFO) << BIN_VERSION_STRING("gbtmaker");
+  LOG(INFO) << BIN_VERSION_STRING("simulator");
 
   // Read the file. If there is an error, report it and exit.
   libconfig::Config cfg;
@@ -118,40 +110,40 @@ int main(int argc, char **argv) {
     return(EXIT_FAILURE);
   }*/
 
-  signal(SIGTERM, handler);
-  signal(SIGINT, handler);
+  // ignore SIGPIPE, avoiding process be killed
+  signal(SIGPIPE, SIG_IGN);
 
   try {
-    bool isCheckZmq = true;
-    cfg.lookupValue("gbtmaker.is_check_zmq", isCheckZmq);
-    int32_t rpcCallInterval = 5;
-    cfg.lookupValue("gbtmaker.rpcinterval", rpcCallInterval);
-    gGbtMaker = new GbtMaker(
-        cfg.lookup("bitcoind.zmq_addr"),
-        cfg.lookup("bitcoind.zmq_timeout"),
-        cfg.lookup("bitcoind.rpc_addr"),
-        cfg.lookup("bitcoind.rpc_userpwd"),
-        cfg.lookup("kafka.brokers"),
-        cfg.lookup("gbtmaker.rawgbt_topic"),
-        rpcCallInterval,
-        isCheckZmq);
+    int32_t port = 3333;
+    cfg.lookupValue("simulator.ss_port", port);
 
-    if (!gGbtMaker->init()) {
-      LOG(FATAL) << "gbtmaker init failure";
-    } else {
-#if defined(CHAIN_TYPE_BCH) || defined(CHAIN_TYPE_BSV)
-      bool runLightGbt = false;
-      cfg.lookupValue("gbtmaker.lightgbt", runLightGbt);
-      if (runLightGbt) {
-        gGbtMaker->runLightGbt();
-      } else {
-        gGbtMaker->run();
-      }
-#else
-      gGbtMaker->run();
-#endif
-    }
-    delete gGbtMaker;
+    int32_t numConns = 3333;
+    cfg.lookupValue("simulator.number_clients", numConns);
+
+    string passwd;
+    cfg.lookupValue("simulator.passwd", passwd);
+
+    bool enableTLS = false;
+    cfg.lookupValue("simulator.enable_tls", enableTLS);
+
+    evthread_use_pthreads();
+
+    // register stratum client factories
+    StratumClient::registerFactory<StratumClient>("BTC");
+
+
+    // new StratumClientWrapper
+    auto wrapper = std::make_unique<StratumClientWrapper>(
+        enableTLS,
+        cfg.lookup("simulator.ss_ip").c_str(),
+        (unsigned short)port,
+        numConns,
+        cfg.lookup("simulator.username"),
+        cfg.lookup("simulator.minername_prefix"),
+        passwd,
+        cfg.lookup("simulator.type"),
+        cfg);
+    wrapper->run();
   } catch (const SettingException &e) {
     LOG(FATAL) << "config missing: " << e.getPath();
     return 1;

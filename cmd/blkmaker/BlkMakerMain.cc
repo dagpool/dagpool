@@ -37,7 +37,7 @@
 #include "config/bpool-version.h"
 #include "Utils.h"
 
-#include "bitcoin/BlockMakerBitcoin.h"
+#include "qitmeer/BlockMakerBitcoin.h"
 
 using namespace std;
 using namespace libconfig;
