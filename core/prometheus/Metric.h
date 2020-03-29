@@ -1,7 +1,7 @@
 /*
  The MIT License (MIT)
 
- Copyright (c) [2016] [BTC.COM]
+ Copyright (c) [2019] [BTC.COM]
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -20,16 +20,31 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE.
- */
-#ifndef DPOOL_VERSION_H_
-#define DPOOL_VERSION_H_
+*/
 
-#cmakedefine DPOOL_VERSION_STR "@DPOOL_VERSION_STR@"
+#pragma once
 
-#ifndef DPOOL_VERSION_STR
-  #define DPOOL_VERSION_STR "unknown"
-#endif
+#include <functional>
+#include <map>
+#include <memory>
+#include <string>
 
-#define BIN_VERSION_STRING(binName) CHAIN_TYPE_STR " " binName " version " DPOOL_VERSION_STR "\n"
+namespace prometheus {
 
-#endif // DPOOL_VERSION_H_
+class Metric {
+public:
+  enum class Type {
+    Counter,
+    Gauge,
+  };
+  virtual ~Metric() = default;
+  virtual const std::string &getName() const = 0;
+  virtual Type getType() const = 0;
+  virtual std::string getValue() const = 0;
+  virtual const std::string &getHelp() const = 0;
+  virtual const std::map<std::string, std::string> &getLabels() const = 0;
+};
+
+} // namespace prometheus
+
+#include "Metric.inl"

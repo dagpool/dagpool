@@ -21,15 +21,16 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE.
  */
-#ifndef DPOOL_VERSION_H_
-#define DPOOL_VERSION_H_
+#pragma once
 
-#cmakedefine DPOOL_VERSION_STR "@DPOOL_VERSION_STR@"
+#include <string>
+#include <openssl/ssl.h>
 
-#ifndef DPOOL_VERSION_STR
-  #define DPOOL_VERSION_STR "unknown"
-#endif
+void init_ssl_locking();
+std::string get_ssl_err_string();
 
-#define BIN_VERSION_STRING(binName) CHAIN_TYPE_STR " " binName " version " DPOOL_VERSION_STR "\n"
+SSL_CTX *get_client_SSL_CTX();
+SSL_CTX *get_client_SSL_CTX_With_Cache();
 
-#endif // DPOOL_VERSION_H_
+SSL_CTX *
+get_server_SSL_CTX(const std::string &certFile, const std::string &keyFile);
