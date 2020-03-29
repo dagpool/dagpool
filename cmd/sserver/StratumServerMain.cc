@@ -36,10 +36,10 @@
 
 #include "zmq.hpp"
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
 #include "StratumServer.h"
-#include "qitmeer/StratumServerBitcoin.h"
+#include "qitmeer/StratumServerQitmeer.h"
 
 #include <chainparams.h>
 

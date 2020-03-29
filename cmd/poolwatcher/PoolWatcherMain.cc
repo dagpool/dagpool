@@ -35,10 +35,10 @@
 #include <libconfig.h++>
 #include <event2/thread.h>
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
-#include "qitmeer/WatcherBitcoin.h"
-#include "qitmeer/WatcherBitcoinProxy.h"
+#include "qitmeer/WatcherQitmeer.h"
+#include "qitmeer/WatcherProxyQitmeer.h"
 
 #include <chainparams.h>
 

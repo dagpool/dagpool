@@ -36,12 +36,12 @@
 
 #include "zmq.hpp"
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
 #include "ShareLogParser.h"
 
-#include "qitmeer/StatisticsBitcoin.h"
-#include "qitmeer/ShareLogParserBitcoin.h"
+#include "qitmeer/StatisticsQitmeer.h"
+#include "qitmeer/ShareLogParserQitmeer.h"
 
 #include "chainparamsbase.h"
 #include "chainparams.h"

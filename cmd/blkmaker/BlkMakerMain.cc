@@ -34,10 +34,10 @@
 #include <glog/logging.h>
 #include <libconfig.h++>
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
 
-#include "qitmeer/BlockMakerBitcoin.h"
+#include "qitmeer/BlockMakerQitmeer.h"
 
 using namespace std;
 using namespace libconfig;
@@ -76,7 +76,7 @@ BlockMaker *createBlockMaker(
     MysqlConnectInfo *poolDBInfo) {
   BlockMaker *maker = nullptr;
   if ("BTC" == def->chainType_) {
-    maker = new BlockMakerBitcoin(def, broker.c_str(), *poolDBInfo);
+    maker = new BlockMakerQitmeer(def, broker.c_str(), *poolDBInfo);
   }
   return maker;
 }

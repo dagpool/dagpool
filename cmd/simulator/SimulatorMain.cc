@@ -37,7 +37,7 @@
 
 #include "zmq.hpp"
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
 #include "StratumClient.h"
 using namespace std;

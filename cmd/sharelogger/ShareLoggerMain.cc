@@ -38,9 +38,9 @@
 
 #include "zlibstream/zstr.hpp"
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
-#include "qitmeer/ShareLoggerBitcoin.h"
+#include "qitmeer/ShareLoggerQitmeer.h"
 
 using namespace std;
 using namespace libconfig;

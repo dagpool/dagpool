@@ -36,12 +36,12 @@
 
 #include "zmq.hpp"
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
 #include "JobMaker.h"
 #include "Zookeeper.h"
 
-#include "qitmeer/JobMakerBitcoin.h"
+#include "qitmeer/JobMakerQitmeer.h"
 
 #include <chainparams.h>
 

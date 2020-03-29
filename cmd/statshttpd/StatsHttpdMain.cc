@@ -36,13 +36,13 @@
 
 #include "zmq.hpp"
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
 #include "StatsHttpd.h"
 #include "RedisConnection.h"
 
-#include "qitmeer/StatisticsBitcoin.h"
-#include "qitmeer/StatsHttpdBitcoin.h"
+#include "qitmeer/StatisticsQitmeer.h"
+#include "qitmeer/StatsHttpdQitmeer.h"
 
 using namespace std;
 using namespace libconfig;

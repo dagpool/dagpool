@@ -36,7 +36,7 @@
 
 #include "zmq.hpp"
 
-#include "config/bpool-version.h"
+#include "config/dpool-version.h"
 #include "Utils.h"
 #include "qitmeer/GbtMaker.h"
 
