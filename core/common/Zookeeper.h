@@ -21,8 +21,8 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE.
  */
-#ifndef BTCPOOL_ZOOKEEPER_H_ // <zookeeper/zookeeper.h> has defined ZOOKEEPER_H_
-#define BTCPOOL_ZOOKEEPER_H_ // add a prefix BTCPOOL_ to avoid the conflict
+#ifndef DAGPOOL_ZOOKEEPER_H_ // <zookeeper/zookeeper.h> has defined ZOOKEEPER_H_
+#define DAGPOOL_ZOOKEEPER_H_
 
 #include <pthread.h>
 #include <zookeeper/zookeeper.h>
@@ -219,4 +219,4 @@ protected:
   void recoverySession();
 };
 
-#endif // BTCPOOL_ZOOKEEPER_H_
+#endif // DAGPOOL_ZOOKEEPER_H_
