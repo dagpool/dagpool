@@ -48,13 +48,13 @@ struct BlockMakerDefinition {
   virtual ~BlockMakerDefinition() {}
 };
 
-struct BlockMakerDefinitionBitcoin : public BlockMakerDefinition {
+struct BlockMakerDefinitionQitmeer : public BlockMakerDefinition {
   string rawGbtTopic_;
   string stratumJobTopic_;
   string auxPowSolvedShareTopic_; // merged mining solved share topic
   string rskSolvedShareTopic_;
 
-  virtual ~BlockMakerDefinitionBitcoin() {}
+  virtual ~BlockMakerDefinitionQitmeer() {}
 };
 
 ////////////////////////////////// BlockMaker //////////////////////////////////

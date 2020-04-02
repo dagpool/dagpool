@@ -57,25 +57,12 @@ void usage() {
       stderr, "Usage:\tblkmaker -c \"blkmaker.cfg\" [-l <log_dir|stderr>]\n");
 }
 
-// BlockMaker* createBlockMaker(Config& cfg, MysqlConnectInfo* poolDBInfo) {
-//   string type = cfg.lookup("blockmaker.type");
-//   string broker = cfg.lookup("kafka.brokers");
-
-//   BlockMaker *maker = nullptr;
-//   if ("BTC" == type)
-//     maker = new BlockMaker(broker.c_str(), *poolDBInfo);
-//   else
-//     maker = new BlockMakerEth(broker.c_str(), *poolDBInfo);
-
-//   return maker;
-// }
-
 BlockMaker *createBlockMaker(
     shared_ptr<BlockMakerDefinition> def,
     const string &broker,
     MysqlConnectInfo *poolDBInfo) {
   BlockMaker *maker = nullptr;
-  if ("BTC" == def->chainType_) {
+  if ("QITMEER" == def->chainType_) {
     maker = new BlockMakerQitmeer(def, broker.c_str(), *poolDBInfo);
   }
   return maker;
@@ -87,24 +74,13 @@ shared_ptr<BlockMakerDefinition> createDefinition(const Setting &setting) {
 
   readFromSetting(setting, "chain_type", chainType);
 
-#if defined(CHAIN_TYPE_STR)
-  if (CHAIN_TYPE_STR == chainType)
-#else
-  if (false)
-#endif
+  if (chainType == "QITMEER")
   {
-    shared_ptr<BlockMakerDefinitionBitcoin> bitcoinDef =
-        std::make_shared<BlockMakerDefinitionBitcoin>();
-    readFromSetting(setting, "job_topic", bitcoinDef->stratumJobTopic_);
-    readFromSetting(setting, "rawgbt_topic", bitcoinDef->rawGbtTopic_);
-    readFromSetting(
-        setting,
-        "auxpow_solved_share_topic",
-        bitcoinDef->auxPowSolvedShareTopic_);
-    readFromSetting(
-        setting, "rsk_solved_share_topic", bitcoinDef->rskSolvedShareTopic_);
-
-    def = bitcoinDef;
+    shared_ptr<BlockMakerDefinitionQitmeer> qitmeerDef =
+        std::make_shared<BlockMakerDefinitionQitmeer>();
+    readFromSetting(setting, "job_topic", qitmeerDef->stratumJobTopic_);
+    readFromSetting(setting, "rawgbt_topic", qitmeerDef->rawGbtTopic_);
+    def = qitmeerDef;
   } else {
     def = std::make_shared<BlockMakerDefinition>();
   }
@@ -113,8 +89,7 @@ shared_ptr<BlockMakerDefinition> createDefinition(const Setting &setting) {
   def->enabled_ = false;
   readFromSetting(setting, "enabled", def->enabled_, true);
   readFromSetting(setting, "solved_share_topic", def->solvedShareTopic_);
-  readFromSetting(
-      setting, "found_aux_block_table", def->foundAuxBlockTable_, true);
+  readFromSetting(setting, "found_aux_block_table", def->foundAuxBlockTable_, true);
   readFromSetting(setting, "aux_chain_name", def->auxChainName_, true);
 
   const Setting &nodes = setting["nodes"];
@@ -128,25 +103,6 @@ shared_ptr<BlockMakerDefinition> createDefinition(const Setting &setting) {
 
   return def;
 }
-
-// shared_ptr<BlockMakerHandler> createBlockMakerHandler(const
-// BlockMakerDefinition &def)
-// {
-//   shared_ptr<BlockMakerHandler> handler;
-
-//   if (def->chainType_ == "ETH")
-//     handler = make_shared<BlockMakerHandler>();
-//   else if (def->chainType_ == "SIA")
-//     handler = make_shared<BlockMakerHandler>();
-//   else if (def->chainType_ == "RSK")
-//     handler = make_shared<BlockMakerHandler>();
-//   else
-//     LOG(FATAL) << "unknown chain type: " << def->chainType_;
-
-//   handler->init(def);
-
-//   return handler;
-// }
 
 void createBlockMakers(
     const libconfig::Config &cfg, MysqlConnectInfo *poolDBInfo) {
@@ -163,9 +119,6 @@ void createBlockMakers(
     }
     LOG(INFO) << "chain: " << def->chainType_
               << ", topic: " << def->solvedShareTopic_ << ", enabled.";
-    // auto handler = createBlockMakerHandler(def);
-    // makers.push_back(std::make_shared<BlockMaker>(broker.c_str(),
-    // *poolDBInfo));
     shared_ptr<BlockMaker> maker(createBlockMaker(def, broker, poolDBInfo));
     makers.push_back(maker);
   }
