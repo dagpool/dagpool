@@ -427,34 +427,6 @@ void BlockMakerQitmeer::consumeStratumJob(rd_kafka_message_t *rkmessage) {
     }
   }
 
-  const uint256 rskHashForMergeMining =
-      uint256S(sjob->blockHashForMergedMining_);
-  {
-    ScopeLock sl(jobId2RskMMHashLock_);
-    jobId2RskHashForMergeMining_[sjob->jobId_] = rskHashForMergeMining;
-    while (jobId2RskHashForMergeMining_.size() > kMaxStratumJobNum_) {
-      jobId2RskHashForMergeMining_.erase(jobId2RskHashForMergeMining_.begin());
-    }
-  }
-
-  std::shared_ptr<AuxBlockInfo> auxblockinfo = std::make_shared<AuxBlockInfo>();
-  auxblockinfo->nmcBlockHash_ = sjob->nmcAuxBlockHash_;
-  BitsToTarget(sjob->nmcAuxBits_, auxblockinfo->nmcNetworkTarget_);
-
-  auxblockinfo->vcashBlockHash_ =
-      uint256S(sjob->vcashBlockHashForMergedMining_);
-  auxblockinfo->vcashNetworkTarget_ = sjob->vcashNetworkTarget_;
-  auxblockinfo->vcashRpcAddress_ = sjob->vcashdRpcAddress_;
-  auxblockinfo->vcashRpcUserPwd_ = sjob->vcashdRpcUserPwd_;
-
-  {
-    ScopeLock sl(jobIdAuxBlockInfoLock_);
-    jobId2AuxHash_[sjob->jobId_] = auxblockinfo;
-
-    while (jobId2AuxHash_.size() > kMaxStratumJobNum_) {
-      jobId2AuxHash_.erase(jobId2AuxHash_.begin());
-    }
-  }
 
   LOG(INFO) << "StratumJob, jobId: " << sjob->jobId_
             << ", gbtHash: " << gbtHash.ToString();

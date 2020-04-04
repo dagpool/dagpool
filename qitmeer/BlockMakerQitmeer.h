@@ -43,19 +43,6 @@ protected:
   KafkaSimpleConsumer kafkaConsumerRawGbt_;
   KafkaSimpleConsumer kafkaConsumerStratumJob_;
 
-  struct AuxBlockInfo {
-    uint256 nmcBlockHash_;
-    uint256 nmcNetworkTarget_;
-    uint256 vcashBlockHash_;
-    uint256 vcashNetworkTarget_;
-    string vcashRpcAddress_;
-    string vcashRpcUserPwd_;
-  };
-
-  mutex jobIdAuxBlockInfoLock_;
-  std::map<uint64_t, shared_ptr<AuxBlockInfo>> jobId2AuxHash_;
-  mutex jobId2RskMMHashLock_;
-  std::map<uint64_t, uint256> jobId2RskHashForMergeMining_;
 
   void insertRawGbt(
       const uint256 &gbtHash, shared_ptr<vector<CTransactionRef>> vtxs);
