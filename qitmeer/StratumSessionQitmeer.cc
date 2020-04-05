@@ -48,7 +48,7 @@ void StratumSessionQitmeer::sendSetDifficulty(
 #ifdef CHAIN_TYPE_ZEC
   // {"id": null, "method": "mining.set_target", "params": ["TARGET"]}
   uint256 target;
-  BitcoinDifficulty::DiffToTarget(difficulty, target);
+  QitmeerDifficulty::DiffToTarget(difficulty, target);
 
   s = Strings::Format(
       "{\"id\":null,\"method\":\"mining.set_target\""
@@ -407,7 +407,7 @@ void StratumSessionQitmeer::handleRequest_SuggestTarget(
   }
 
   suggestedDiff_ = formatDifficulty(
-      BitcoinDifficulty::TargetToDiff(jparams.children()->at(0).str()));
+      QitmeerDifficulty::TargetToDiff(jparams.children()->at(0).str()));
   responseTrue(idStr);
 }
 

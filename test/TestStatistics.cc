@@ -177,7 +177,7 @@ TEST(ShareStatsDay, ShareStatsDay) {
 
     // share -> socre = 1 : 1
     // https://btc.com/000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
-    share.set_blkbits(BitcoinDifficulty::GetDiffOneBits());
+    share.set_blkbits(QitmeerDifficulty::GetDiffOneBits());
 
     // accept
     for (uint32_t i = 0; i < 24; i++) { // hour idx range: [0, 23]
