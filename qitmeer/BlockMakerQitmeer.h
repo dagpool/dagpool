@@ -38,7 +38,6 @@ protected:
   std::map<uint64_t, uint256> jobId2GbtHash_;
 
   bpt::ptime lastSubmittedBlockTime;
-  uint32_t submittedRskBlocks;
 
   KafkaSimpleConsumer kafkaConsumerRawGbt_;
   KafkaSimpleConsumer kafkaConsumerStratumJob_;
@@ -58,6 +57,7 @@ protected:
   void consumeRawGbt(rd_kafka_message_t *rkmessage);
   void consumeStratumJob(rd_kafka_message_t *rkmessage);
   void consumeSolvedShare(rd_kafka_message_t *rkmessage);
+
   void processSolvedShare(rd_kafka_message_t *rkmessage) override;
 
   void addRawgbt(const char *str, size_t len);

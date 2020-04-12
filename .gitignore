@@ -1,0 +1,19 @@
+# IDE files
+.vs/
+.vscode/
+.idea/
+.DS_Store
+
+# Building files
+build
+build*/
+
+# GNU global files
+/GPATH
+/GRTAGS
+/GTAGS
+
+# generated configuration files
+config/*.h
+cmake-build-debug/
+cmake-build-release/
