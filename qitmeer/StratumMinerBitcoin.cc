@@ -283,7 +283,7 @@ void StratumMinerBitcoin::handleRequest_Submit(
 
   // calc jobTarget
   uint256 jobTarget;
-  BitcoinDifficulty::DiffToTarget(share.sharediff(), jobTarget);
+  QitmeerDifficulty::DiffToTarget(share.sharediff(), jobTarget);
 
 #ifdef CHAIN_TYPE_ZEC
   LocalShare localShare(

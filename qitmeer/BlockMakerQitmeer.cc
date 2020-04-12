@@ -27,7 +27,6 @@ BlockMakerQitmeer::BlockMakerQitmeer(
   , kMaxRawGbtNum_(100) /* if 5 seconds a rawgbt, will hold 100*5/60 = 8 mins rawgbt */
   , kMaxStratumJobNum_(120) /* if 30 seconds a stratum job, will hold 60 mins stratum job */
   , lastSubmittedBlockTime()
-  , submittedRskBlocks(0)
   , kafkaConsumerRawGbt_(kafkaBrokers, def()->rawGbtTopic_.c_str(), 0 /* patition */)
   , kafkaConsumerStratumJob_(kafkaBrokers, def()->stratumJobTopic_.c_str(), 0 /* patition */)
 {
@@ -78,6 +77,135 @@ bool BlockMakerQitmeer::init() {
     return false;
   }
   return true;
+}
+
+void BlockMakerQitmeer::run() {
+  // setup threads
+  threadConsumeRawGbt_ =
+          std::thread(&BlockMakerQitmeer::runThreadConsumeRawGbt, this);
+  threadConsumeStratumJob_ =
+          std::thread(&BlockMakerQitmeer::runThreadConsumeStratumJob, this);
+
+  BlockMaker::run();
+}
+
+void BlockMakerQitmeer::runThreadConsumeRawGbt() {
+  const int32_t timeoutMs = 1000;
+
+  while (running_) {
+    rd_kafka_message_t *rkmessage;
+    rkmessage = kafkaConsumerRawGbt_.consumer(timeoutMs);
+    if (rkmessage == nullptr) /* timeout */
+      continue;
+
+    consumeRawGbt(rkmessage);
+
+    /* Return message to rdkafka */
+    rd_kafka_message_destroy(rkmessage);
+  }
+}
+
+void BlockMakerQitmeer::runThreadConsumeStratumJob() {
+  const int32_t timeoutMs = 1000;
+
+  while (running_) {
+    rd_kafka_message_t *rkmessage;
+    rkmessage = kafkaConsumerStratumJob_.consumer(timeoutMs);
+    if (rkmessage == nullptr) /* timeout */
+      continue;
+
+    consumeStratumJob(rkmessage);
+
+    /* Return message to rdkafka */
+    rd_kafka_message_destroy(rkmessage);
+  }
+}
+
+
+void BlockMakerQitmeer::consumeRawGbt(rd_kafka_message_t *rkmessage) {
+  // check error
+  if (rkmessage->err) {
+    if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
+      // Reached the end of the topic+partition queue on the broker.
+      // Not really an error.
+      //      LOG(INFO) << "consumer reached end of " <<
+      //      rd_kafka_topic_name(rkmessage->rkt)
+      //      << "[" << rkmessage->partition << "] "
+      //      << " message queue at offset " << rkmessage->offset;
+      // acturlly
+      return;
+    }
+
+    LOG(ERROR) << "consume error for topic "
+               << rd_kafka_topic_name(rkmessage->rkt) << "["
+               << rkmessage->partition << "] offset " << rkmessage->offset
+               << ": " << rd_kafka_message_errstr(rkmessage);
+
+    if (rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_PARTITION ||
+        rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC) {
+      LOG(FATAL) << "consume fatal";
+      stop();
+    }
+    return;
+  }
+
+  LOG(INFO) << "received rawgbt message, len: " << rkmessage->len;
+  addRawgbt((const char *)rkmessage->payload, rkmessage->len);
+}
+
+void BlockMakerQitmeer::consumeStratumJob(rd_kafka_message_t *rkmessage) {
+  // check error
+  if (rkmessage->err) {
+    if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
+      // Reached the end of the topic+partition queue on the broker.
+      // Not really an error.
+      //      LOG(INFO) << "consumer reached end of " <<
+      //      rd_kafka_topic_name(rkmessage->rkt)
+      //      << "[" << rkmessage->partition << "] "
+      //      << " message queue at offset " << rkmessage->offset;
+      // acturlly
+      return;
+    }
+
+    LOG(ERROR) << "consume error for topic "
+               << rd_kafka_topic_name(rkmessage->rkt) << "["
+               << rkmessage->partition << "] offset " << rkmessage->offset
+               << ": " << rd_kafka_message_errstr(rkmessage);
+
+    if (rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_PARTITION ||
+        rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC) {
+      LOG(FATAL) << "consume fatal";
+      stop();
+    }
+    return;
+  }
+
+  LOG(INFO) << "received StratumJob message, len: " << rkmessage->len;
+
+  shared_ptr<StratumJobBitcoin> sjob = std::make_shared<StratumJobBitcoin>();
+  bool res = sjob->unserializeFromJson(
+          (const char *)rkmessage->payload, rkmessage->len);
+  if (res == false) {
+    LOG(ERROR) << "unserialize stratum job fail";
+    return;
+  }
+
+  const uint256 gbtHash = uint256S(sjob->gbtHash_);
+  {
+    ScopeLock sl(jobIdMapLock_);
+    jobId2GbtHash_[sjob->jobId_] = gbtHash;
+
+    // Maps (and sets) are sorted, so the first element is the smallest,
+    // and the last element is the largest.
+    while (jobId2GbtHash_.size() > kMaxStratumJobNum_) {
+      jobId2GbtHash_.erase(jobId2GbtHash_.begin());
+    }
+  }
+
+
+  LOG(INFO) << "StratumJob, jobId: " << sjob->jobId_
+            << ", gbtHash: " << gbtHash.ToString();
+
 }
 
 void BlockMakerQitmeer::processSolvedShare(rd_kafka_message_t *rkmessage) {
@@ -168,37 +296,6 @@ void BlockMakerQitmeer::processSolvedShare(rd_kafka_message_t *rkmessage) {
           blkHeader,
           coinbaseValue, // coinbase value
           blockHex.length() / 2);
-}
-
-void BlockMakerQitmeer::consumeRawGbt(rd_kafka_message_t *rkmessage) {
-  // check error
-  if (rkmessage->err) {
-    if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
-      // Reached the end of the topic+partition queue on the broker.
-      // Not really an error.
-      //      LOG(INFO) << "consumer reached end of " <<
-      //      rd_kafka_topic_name(rkmessage->rkt)
-      //      << "[" << rkmessage->partition << "] "
-      //      << " message queue at offset " << rkmessage->offset;
-      // acturlly
-      return;
-    }
-
-    LOG(ERROR) << "consume error for topic "
-               << rd_kafka_topic_name(rkmessage->rkt) << "["
-               << rkmessage->partition << "] offset " << rkmessage->offset
-               << ": " << rd_kafka_message_errstr(rkmessage);
-
-    if (rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_PARTITION ||
-        rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC) {
-      LOG(FATAL) << "consume fatal";
-      stop();
-    }
-    return;
-  }
-
-  LOG(INFO) << "received rawgbt message, len: " << rkmessage->len;
-  addRawgbt((const char *)rkmessage->payload, rkmessage->len);
 }
 
 void BlockMakerQitmeer::addRawgbt(const char *str, size_t len) {
@@ -376,129 +473,4 @@ void BlockMakerQitmeer::_submitBlockThread(
     LOG(ERROR) << "rpc call fail: " << response
                << "\nrpc request : " << request;
   }
-}
-
-void BlockMakerQitmeer::consumeStratumJob(rd_kafka_message_t *rkmessage) {
-  // check error
-  if (rkmessage->err) {
-    if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
-      // Reached the end of the topic+partition queue on the broker.
-      // Not really an error.
-      //      LOG(INFO) << "consumer reached end of " <<
-      //      rd_kafka_topic_name(rkmessage->rkt)
-      //      << "[" << rkmessage->partition << "] "
-      //      << " message queue at offset " << rkmessage->offset;
-      // acturlly
-      return;
-    }
-
-    LOG(ERROR) << "consume error for topic "
-               << rd_kafka_topic_name(rkmessage->rkt) << "["
-               << rkmessage->partition << "] offset " << rkmessage->offset
-               << ": " << rd_kafka_message_errstr(rkmessage);
-
-    if (rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_PARTITION ||
-        rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC) {
-      LOG(FATAL) << "consume fatal";
-      stop();
-    }
-    return;
-  }
-
-  LOG(INFO) << "received StratumJob message, len: " << rkmessage->len;
-
-  shared_ptr<StratumJobBitcoin> sjob = std::make_shared<StratumJobBitcoin>();
-  bool res = sjob->unserializeFromJson(
-      (const char *)rkmessage->payload, rkmessage->len);
-  if (res == false) {
-    LOG(ERROR) << "unserialize stratum job fail";
-    return;
-  }
-
-  const uint256 gbtHash = uint256S(sjob->gbtHash_);
-  {
-    ScopeLock sl(jobIdMapLock_);
-    jobId2GbtHash_[sjob->jobId_] = gbtHash;
-
-    // Maps (and sets) are sorted, so the first element is the smallest,
-    // and the last element is the largest.
-    while (jobId2GbtHash_.size() > kMaxStratumJobNum_) {
-      jobId2GbtHash_.erase(jobId2GbtHash_.begin());
-    }
-  }
-
-  const uint256 rskHashForMergeMining =
-      uint256S(sjob->blockHashForMergedMining_);
-  {
-    ScopeLock sl(jobId2RskMMHashLock_);
-    jobId2RskHashForMergeMining_[sjob->jobId_] = rskHashForMergeMining;
-    while (jobId2RskHashForMergeMining_.size() > kMaxStratumJobNum_) {
-      jobId2RskHashForMergeMining_.erase(jobId2RskHashForMergeMining_.begin());
-    }
-  }
-
-  std::shared_ptr<AuxBlockInfo> auxblockinfo = std::make_shared<AuxBlockInfo>();
-  auxblockinfo->nmcBlockHash_ = sjob->nmcAuxBlockHash_;
-  BitsToTarget(sjob->nmcAuxBits_, auxblockinfo->nmcNetworkTarget_);
-
-  auxblockinfo->vcashBlockHash_ =
-      uint256S(sjob->vcashBlockHashForMergedMining_);
-  auxblockinfo->vcashNetworkTarget_ = sjob->vcashNetworkTarget_;
-  auxblockinfo->vcashRpcAddress_ = sjob->vcashdRpcAddress_;
-  auxblockinfo->vcashRpcUserPwd_ = sjob->vcashdRpcUserPwd_;
-
-  {
-    ScopeLock sl(jobIdAuxBlockInfoLock_);
-    jobId2AuxHash_[sjob->jobId_] = auxblockinfo;
-
-    while (jobId2AuxHash_.size() > kMaxStratumJobNum_) {
-      jobId2AuxHash_.erase(jobId2AuxHash_.begin());
-    }
-  }
-
-  LOG(INFO) << "StratumJob, jobId: " << sjob->jobId_
-            << ", gbtHash: " << gbtHash.ToString();
-
-}
-
-void BlockMakerQitmeer::runThreadConsumeRawGbt() {
-  const int32_t timeoutMs = 1000;
-
-  while (running_) {
-    rd_kafka_message_t *rkmessage;
-    rkmessage = kafkaConsumerRawGbt_.consumer(timeoutMs);
-    if (rkmessage == nullptr) /* timeout */
-      continue;
-
-    consumeRawGbt(rkmessage);
-
-    /* Return message to rdkafka */
-    rd_kafka_message_destroy(rkmessage);
-  }
-}
-
-void BlockMakerQitmeer::runThreadConsumeStratumJob() {
-  const int32_t timeoutMs = 1000;
-
-  while (running_) {
-    rd_kafka_message_t *rkmessage;
-    rkmessage = kafkaConsumerStratumJob_.consumer(timeoutMs);
-    if (rkmessage == nullptr) /* timeout */
-      continue;
-
-    consumeStratumJob(rkmessage);
-
-    /* Return message to rdkafka */
-    rd_kafka_message_destroy(rkmessage);
-  }
-}
-
-void BlockMakerQitmeer::run() {
-  // setup threads
-  threadConsumeRawGbt_ =
-      std::thread(&BlockMakerQitmeer::runThreadConsumeRawGbt, this);
-  threadConsumeStratumJob_ =
-      std::thread(&BlockMakerQitmeer::runThreadConsumeStratumJob, this);
-
-  BlockMaker::run();
 }

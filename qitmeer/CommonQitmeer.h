@@ -10,12 +10,6 @@
 
 #include "Difficulty.h"
 
-#ifdef CHAIN_TYPE_LTC
-using BitcoinDifficulty = Difficulty<0x1f00ffff>;
-#elif defined(CHAIN_TYPE_ZEC)
-using BitcoinDifficulty = Difficulty<0x1f07ffff>;
-#else
-using BitcoinDifficulty = Difficulty<0x1d00ffff>;
-#endif
+using QitmeerDifficulty = Difficulty<0x1d00ffff>;
 
 #endif
